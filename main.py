@@ -315,7 +315,7 @@ TRANSFERS: List[Tuple[str, str]] = [
     ("l2_bellas_artes", "l8_bellas_artes"),
 
     # Pino Suárez (1-2)
-    ("l1_pino_suarez", "l2_san_antonio_abad"),  # close in schematic, primary transfer is at Pino Suárez; approximate
+    ("l1_pino_suarez", "l2_san_antonio_abad"),  # approximate schematic coupling
 
     # Chabacano (2-8-9)
     ("l2_chabacano", "l8_chabacano"),
@@ -377,7 +377,7 @@ def dist(a: Station, b: Station) -> float:
 
 
 class RouteOptions(BaseModel):
-    transfer_penalty: float = Field(5.0, description="Additional cost per transfer")
+    transfer_penalty: float = Field(0.0, description="Additional cost per transfer (0 = no penalty)")
     mobility: str = Field("normal", description="normal | reduced")
     time_of_day: str = Field("offpeak", description="offpeak | peak")
     prefer_fewer_transfers: bool = False
@@ -422,7 +422,8 @@ def a_star(origin_id: str, destination_id: str, options: RouteOptions) -> RouteR
         cost = base
         line: Optional[str] = None
         if etype == 'transfer':
-            cost += options.transfer_penalty
+            # No additional penalty; keep geometric base only
+            pass
         else:
             line = su.line
 
@@ -490,7 +491,7 @@ def a_star(origin_id: str, destination_id: str, options: RouteOptions) -> RouteR
         d = dist(STATION_BY_ID[a], STATION_BY_ID[b])
         cost = d
         if etype == 'transfer':
-            cost += options.transfer_penalty
+            # No extra penalty; optional mobility factor for transfers only
             if options.mobility == 'reduced':
                 cost *= 1.5
             transfers += 1
