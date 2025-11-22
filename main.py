@@ -22,100 +22,351 @@ app.add_middleware(
 class Station(BaseModel):
     id: str
     name: str
-    line: str
+    line: str  # '1'..'12', 'A', 'B'
     color: str
-    x: float
-    y: float
-    accessible: bool = True  # simplified assumption
+    x: float  # 0..100 schematic coordinates (west->east)
+    y: float  # 0..100 schematic coordinates (south->north)
+    order: int  # sequential order along line to draw polylines
+    accessible: bool = True
 
-# Subset of CDMX lines and stations with approximate coordinates in a normalized plane (0..100)
-# Coordinates are rough, only to support a plausible spatial heuristic.
-STATIONS: List[Station] = [
-    # Line 1 (granate) Observatorio → Balderas
-    Station(id="observatorio", name="Observatorio", line="1", color="#8E2046", x=5, y=40),
-    Station(id="tacubaya_l1", name="Tacubaya", line="1", color="#8E2046", x=15, y=40),
-    Station(id="juanacatlan", name="Juanacatlán", line="1", color="#8E2046", x=25, y=40),
-    Station(id="chapultepec", name="Chapultepec", line="1", color="#8E2046", x=35, y=40),
-    Station(id="sevilla", name="Sevilla", line="1", color="#8E2046", x=45, y=40),
-    Station(id="insurgentes_l1", name="Insurgentes", line="1", color="#8E2046", x=55, y=40),
-    Station(id="cuauhtemoc", name="Cuauhtémoc", line="1", color="#8E2046", x=65, y=40),
-    Station(id="balderas_l1", name="Balderas", line="1", color="#8E2046", x=70, y=40),
+# Official-ish colors (approx hex)
+LINE_COLORS: Dict[str, str] = {
+    "1": "#E03C8A",  # Rosa mexicano
+    "2": "#003CA6",  # Azul marino
+    "3": "#6EBD45",  # Verde olivo/bandera medio
+    "4": "#A7D5EB",  # Cian
+    "5": "#FFCE00",  # Amarillo
+    "6": "#D52B1E",  # Rojo oscuro
+    "7": "#F5A300",  # Naranja
+    "8": "#00A94F",  # Verde bandera
+    "9": "#A05D2D",  # Café claro
+    "10": "#9D9D9D",  # no usada
+    "11": "#9D9D9D",  # no usada
+    "12": "#C6B200",  # Dorado
+    "A": "#9F69B5",  # Morado claro
+    "B": "#7B7D7D",  # Gris
+}
 
-    # Line 3 (verde claro) Universidad → Juárez
-    Station(id="universidad", name="Universidad", line="3", color="#6ECF68", x=35, y=95),
-    Station(id="copilco", name="Copilco", line="3", color="#6ECF68", x=35, y=90),
-    Station(id="ma_quevedo", name="Miguel Ángel de Quevedo", line="3", color="#6ECF68", x=35, y=85),
-    Station(id="viveros", name="Viveros/Derechos", line="3", color="#6ECF68", x=35, y=80),
-    Station(id="coyoacan", name="Coyoacán", line="3", color="#6ECF68", x=35, y=75),
-    Station(id="division", name="División del Norte", line="3", color="#6ECF68", x=45, y=70),
-    Station(id="zapata_l3", name="Zapata", line="3", color="#6ECF68", x=55, y=70),
-    Station(id="eugenia", name="Eugenia", line="3", color="#6ECF68", x=60, y=65),
-    Station(id="etiopia", name="Etiopía/Plaza de la Transparencia", line="3", color="#6ECF68", x=65, y=60),
-    Station(id="centro_medico_l3", name="Centro Médico", line="3", color="#6ECF68", x=65, y=55),
-    Station(id="hospital_general", name="Hospital General", line="3", color="#6ECF68", x=67, y=50),
-    Station(id="ninos_heroes", name="Niños Héroes", line="3", color="#6ECF68", x=69, y=45),
-    Station(id="balderas_l3", name="Balderas", line="3", color="#6ECF68", x=70, y=40),
-    Station(id="juarez", name="Juárez", line="3", color="#6ECF68", x=72, y=35),
+STATIONS: List[Station] = []
+EDGES: List[Tuple[str, str, str]] = []  # (u, v, 'line'|'transfer')
 
-    # Line 7 (naranja) Barranca del Muerto → Polanco
-    Station(id="barranca", name="Barranca del Muerto", line="7", color="#F59E0B", x=10, y=85),
-    Station(id="mixcoac_l7", name="Mixcoac", line="7", color="#F59E0B", x=20, y=80),
-    Station(id="san_antonio", name="San Antonio", line="7", color="#F59E0B", x=25, y=70),
-    Station(id="san_pedro", name="San Pedro de los Pinos", line="7", color="#F59E0B", x=25, y=60),
-    Station(id="tacubaya_l7", name="Tacubaya", line="7", color="#F59E0B", x=15, y=40),
-    Station(id="constituyentes", name="Constituyentes", line="7", color="#F59E0B", x=25, y=35),
-    Station(id="auditorio", name="Auditorio", line="7", color="#F59E0B", x=35, y=30),
-    Station(id="polanco", name="Polanco", line="7", color="#F59E0B", x=45, y=30),
 
-    # Line 9 (marrón) Tacubaya → Lázaro Cárdenas
-    Station(id="tacubaya_l9", name="Tacubaya", line="9", color="#8B5E3C", x=15, y=40),
-    Station(id="patriotismo", name="Patriotismo", line="9", color="#8B5E3C", x=35, y=50),
-    Station(id="chilpancingo", name="Chilpancingo", line="9", color="#8B5E3C", x=55, y=55),
-    Station(id="centro_medico_l9", name="Centro Médico", line="9", color="#8B5E3C", x=65, y=55),
-    Station(id="lazaro", name="Lázaro Cárdenas", line="9", color="#8B5E3C", x=75, y=55),
-
-    # Line 12 (verde oscuro) Mixcoac → Eje Central
-    Station(id="mixcoac_l12", name="Mixcoac", line="12", color="#065F46", x=20, y=80),
-    Station(id="insurgentes_sur", name="Insurgentes Sur", line="12", color="#065F46", x=30, y=75),
-    Station(id="h20nov", name="Hospital 20 de Noviembre", line="12", color="#065F46", x=40, y=72),
-    Station(id="zapata_l12", name="Zapata", line="12", color="#065F46", x=55, y=70),
-    Station(id="parque_venados", name="Parque de los Venados", line="12", color="#065F46", x=60, y=68),
-    Station(id="eje_central", name="Eje Central", line="12", color="#065F46", x=70, y=65),
-]
-
-# Build lookup maps
-STATION_BY_ID: Dict[str, Station] = {s.id: s for s in STATIONS}
-
-# Edges: (u, v, type) where type is 'line' or 'transfer'
-EDGES: List[Tuple[str, str, str]] = []
-
-# Helper to connect consecutive on same line
-
-def connect_sequence(ids: List[str]):
+def add_line(line: str, names: List[Tuple[str, str, float, float]]):
+    color = LINE_COLORS[line]
+    start_idx = len([s for s in STATIONS if s.line == line])
+    ids: List[str] = []
+    for i, (sid, name, x, y) in enumerate(names, start=1):
+        STATIONS.append(Station(id=sid, name=name, line=line, color=color, x=x, y=y, order=i))
+        ids.append(sid)
+    # connect sequence bidirectionally
     for i in range(len(ids) - 1):
         EDGES.append((ids[i], ids[i+1], 'line'))
         EDGES.append((ids[i+1], ids[i], 'line'))
 
-# Line sequences
-connect_sequence(["observatorio","tacubaya_l1","juanacatlan","chapultepec","sevilla","insurgentes_l1","cuauhtemoc","balderas_l1"])
-connect_sequence(["universidad","copilco","ma_quevedo","viveros","coyoacan","division","zapata_l3","eugenia","etiopia","centro_medico_l3","hospital_general","ninos_heroes","balderas_l3","juarez"])
-connect_sequence(["barranca","mixcoac_l7","san_antonio","san_pedro","tacubaya_l7","constituyentes","auditorio","polanco"])
-connect_sequence(["tacubaya_l9","patriotismo","chilpancingo","centro_medico_l9","lazaro"])
-connect_sequence(["mixcoac_l12","insurgentes_sur","h20nov","zapata_l12","parque_venados","eje_central"])
 
-# Transfers (bidirectional)
-TRANSFERS = [
-    ("mixcoac_l7", "mixcoac_l12"),
-    ("zapata_l3", "zapata_l12"),
-    ("tacubaya_l1", "tacubaya_l7"),
-    ("tacubaya_l1", "tacubaya_l9"),
-    ("tacubaya_l7", "tacubaya_l9"),
-    ("centro_medico_l3", "centro_medico_l9"),
-    ("balderas_l1", "balderas_l3"),
+# ---------------------------
+# Lines (schematic coordinates)
+# ---------------------------
+# Coordinates are approximate to achieve a clean schematic with N up, E right.
+
+# Line 1: Observatorio → Pantitlán
+add_line("1", [
+    ("l1_observatorio", "Observatorio", 4, 44),
+    ("l1_tacubaya", "Tacubaya", 12, 44),
+    ("l1_juanacatlan", "Juanacatlán", 20, 44),
+    ("l1_chapultepec", "Chapultepec", 28, 44),
+    ("l1_sevilla", "Sevilla", 36, 44),
+    ("l1_insurgentes", "Insurgentes", 44, 44),
+    ("l1_cuauhtemoc", "Cuauhtémoc", 52, 44),
+    ("l1_balderas", "Balderas", 58, 44),
+    ("l1_salto_del_agua", "Salto del Agua", 62, 44),
+    ("l1_isabel_la_catolica", "Isabel la Católica", 66, 44),
+    ("l1_pino_suarez", "Pino Suárez", 70, 44),
+    ("l1_merced", "Merced", 74, 44),
+    ("l1_candelaria", "Candelaria", 78, 44),
+    ("l1_san_lazaro", "San Lázaro", 82, 44),
+    ("l1_moctezuma", "Moctezuma", 86, 44),
+    ("l1_balbuena", "Balbuena", 90, 44),
+    ("l1_boulevard_pz", "Boulevard Pto. Aéreo", 94, 44),
+    ("l1_puebla", "Puebla", 96, 44),
+    ("l1_pantitlan", "Pantitlán", 98, 44),
+])
+
+# Line 2: Cuatro Caminos → Tasqueña
+add_line("2", [
+    ("l2_cuatro_caminos", "Cuatro Caminos", 2, 72),
+    ("l2_panteones", "Panteones", 8, 68),
+    ("l2_tacuba", "Tacuba", 12, 64),
+    ("l2_cuitlahuac", "Cuitláhuac", 18, 60),
+    ("l2_popotla", "Popotla", 22, 58),
+    ("l2_colegio_militar", "Colegio Militar", 26, 56),
+    ("l2_normal", "Normal", 30, 54),
+    ("l2_san_cosme", "San Cosme", 38, 52),
+    ("l2_revolucion", "Revolución", 46, 50),
+    ("l2_hidalgo", "Hidalgo", 54, 48),
+    ("l2_bellas_artes", "Bellas Artes", 60, 46),
+    ("l2_allende", "Allende", 66, 46),
+    ("l2_zocalo", "Zócalo/Tenochtitlan", 70, 48),
+    ("l2_san_antonio_abad", "San Antonio Abad", 70, 56),
+    ("l2_chabacano", "Chabacano", 70, 62),
+    ("l2_ermita", "Ermita", 70, 72),
+    ("l2_general_anaya", "General Anaya", 70, 78),
+    ("l2_tasquena", "Tasqueña", 70, 84),
+])
+
+# Line 3: Indios Verdes → Universidad
+add_line("3", [
+    ("l3_indios_verdes", "Indios Verdes", 58, 4),
+    ("l3_dep_18_marzo", "Deportivo 18 de Marzo", 58, 10),
+    ("l3_la_raza", "La Raza", 58, 16),
+    ("l3_tlatelolco", "Tlatelolco", 58, 22),
+    ("l3_guerrero", "Guerrero", 58, 28),
+    ("l3_hidalgo", "Hidalgo", 56, 48),
+    ("l3_juarez", "Juárez", 60, 42),
+    ("l3_ninos_heroes", "Niños Héroes", 62, 38),
+    ("l3_c_medico", "Centro Médico", 66, 34),
+    ("l3_etiopia", "Etiopía", 66, 28),
+    ("l3_eugenia", "Eugenia", 64, 24),
+    ("l3_zapata", "Zapata", 60, 22),
+    ("l3_division", "División del Norte", 56, 20),
+    ("l3_coyoacan", "Coyoacán", 52, 18),
+    ("l3_ma_quevedo", "Miguel Ángel de Quevedo", 48, 16),
+    ("l3_copilco", "Copilco", 44, 14),
+    ("l3_universidad", "Universidad", 40, 12),
+])
+
+# Line 4: Martín Carrera → Santa Anita (diagonal NE→S)
+add_line("4", [
+    ("l4_martin_carrera", "Martín Carrera", 82, 8),
+    ("l4_talisman", "Talismán", 80, 14),
+    ("l4_bondojito", "Bondojito", 78, 18),
+    ("l4_consulado", "Consulado", 76, 22),
+    ("l4_morelos", "Morelos", 72, 32),
+    ("l4_candelaria", "Candelaria", 78, 44),
+    ("l4_fray_servando", "Fray Servando", 76, 50),
+    ("l4_jamaica", "Jamaica", 74, 56),
+    ("l4_santa_anita", "Santa Anita", 72, 62),
+])
+
+# Line 5: Politécnico → Pantitlán
+add_line("5", [
+    ("l5_poli", "Politécnico", 46, 6),
+    ("l5_inst_petroleo", "Instituto del Petróleo", 52, 10),
+    ("l5_la_raza", "La Raza", 58, 16),
+    ("l5_misterios", "Misterios", 66, 18),
+    ("l5_consulado", "Consulado", 76, 22),
+    ("l5_aragon", "Aragón", 84, 24),
+    ("l5_oceania", "Oceanía", 90, 28),
+    ("l5_terminal_aerea", "Terminal Aérea", 92, 34),
+    ("l5_hangares", "Hangares", 94, 38),
+    ("l5_pantitlan", "Pantitlán", 98, 44),
+])
+
+# Line 6: El Rosario → Martín Carrera
+add_line("6", [
+    ("l6_el_rosario", "El Rosario", 8, 8),
+    ("l6_tezozomoc", "Tezozómoc", 14, 10),
+    ("l6_azcapotzalco", "Azcapotzalco", 20, 12),
+    ("l6_ferreria", "Ferrería/Arena CDMX", 28, 14),
+    ("l6_vallejo", "Vallejo", 36, 16),
+    ("l6_inst_petroleo", "Instituto del Petróleo", 52, 10),
+    ("l6_lindavista", "Lindavista", 62, 12),
+    ("l6_dep_18_marzo", "Deportivo 18 de Marzo", 58, 10),
+    ("l6_la_villa", "La Villa–Basílica", 70, 10),
+    ("l6_martin_carrera", "Martín Carrera", 82, 8),
+])
+
+# Line 7: El Rosario → Barranca del Muerto
+add_line("7", [
+    ("l7_el_rosario", "El Rosario", 8, 8),
+    ("l7_aquiles_serdan", "Aquiles Serdán", 10, 20),
+    ("l7_tacuba", "Tacuba", 12, 64),
+    ("l7_san_joaquin", "San Joaquín", 18, 58),
+    ("l7_polanco", "Polanco", 24, 52),
+    ("l7_auditorio", "Auditorio", 28, 48),
+    ("l7_constituyentes", "Constituyentes", 20, 44),
+    ("l7_tacubaya", "Tacubaya", 12, 44),
+    ("l7_san_pedro_pinos", "San Pedro de los Pinos", 12, 52),
+    ("l7_san_antonio", "San Antonio", 12, 60),
+    ("l7_mixcoac", "Mixcoac", 12, 68),
+    ("l7_barranca", "Barranca del Muerto", 12, 78),
+])
+
+# Line 8: Garibaldi → Constitución de 1917
+add_line("8", [
+    ("l8_garibaldi", "Garibaldi", 62, 36),
+    ("l8_bellas_artes", "Bellas Artes", 60, 46),
+    ("l8_san_juan_letran", "San Juan de Letrán", 62, 48),
+    ("l8_salto_del_agua", "Salto del Agua", 62, 44),
+    ("l8_doctores", "Doctores", 64, 54),
+    ("l8_obrera", "Obrera", 66, 58),
+    ("l8_chabacano", "Chabacano", 70, 62),
+    ("l8_la_viga", "La Viga", 72, 66),
+    ("l8_santa_anita", "Santa Anita", 72, 62),
+    ("l8_coyuya", "Coyuya", 76, 66),
+    ("l8_iztacalco", "Iztacalco", 80, 68),
+    ("l8_apatlaco", "Apatlaco", 84, 70),
+    ("l8_aculco", "Aculco", 86, 72),
+    ("l8_escuadron201", "Escuadrón 201", 88, 74),
+    ("l8_atlalilco", "Atlalilco", 90, 76),
+    ("l8_iztapalapa", "Iztapalapa", 92, 78),
+    ("l8_cerro_estrella", "Cerro de la Estrella", 94, 80),
+    ("l8_uam_i", "UAM I", 96, 82),
+    ("l8_const_1917", "Constitución de 1917", 98, 84),
+])
+
+# Line 9: Tacubaya → Pantitlán
+add_line("9", [
+    ("l9_tacubaya", "Tacubaya", 12, 44),
+    ("l9_patriotismo", "Patriotismo", 24, 46),
+    ("l9_chilpancingo", "Chilpancingo", 36, 48),
+    ("l9_c_medico", "Centro Médico", 66, 34),
+    ("l9_lazaro_cardenas", "Lázaro Cárdenas", 72, 40),
+    ("l9_chabacano", "Chabacano", 70, 62),
+    ("l9_jamaica", "Jamaica", 74, 56),
+    ("l9_mixiuhca", "Mixiuhca", 86, 48),
+    ("l9_velodromo", "Velódromo", 90, 46),
+    ("l9_ciudad_deportiva", "Ciudad Deportiva", 94, 46),
+    ("l9_puebla", "Puebla", 96, 44),
+    ("l9_pantitlan", "Pantitlán", 98, 44),
+])
+
+# Line 12: Mixcoac → Tláhuac (partial important nodes)
+add_line("12", [
+    ("l12_mixcoac", "Mixcoac", 12, 68),
+    ("l12_insurgentes_sur", "Insurgentes Sur", 20, 66),
+    ("l12_h20nov", "Hospital 20 de Noviembre", 28, 64),
+    ("l12_zapata", "Zapata", 60, 22),
+    ("l12_parque_venados", "Parque de los Venados", 64, 20),
+    ("l12_eje_central", "Eje Central", 68, 18),
+    ("l12_ermita", "Ermita", 70, 72),
+    ("l12_mexicaltzingo", "Mexicaltzingo", 78, 74),
+    ("l12_atlalilco", "Atlalilco", 90, 76),
+    ("l12_culhuacan", "Culhuacán", 88, 72),
+    ("l12_san_andres", "San Andrés Tomatlán", 86, 70),
+    ("l12_lomas_estrella", "Lomas Estrella", 84, 68),
+    ("l12_calle_11", "Calle 11", 82, 66),
+    ("l12_periferico", "Periférico Oriente", 80, 64),
+    ("l12_tezonco", "Tezonco", 78, 62),
+    ("l12_olivos", "Olivos", 76, 60),
+    ("l12_nopalera", "Nopalera", 74, 58),
+    ("l12_zapotitlan", "Zapotitlán", 72, 56),
+    ("l12_tlaltenco", "Tlaltenco", 70, 54),
+    ("l12_tlahuac", "Tláhuac", 68, 52),
+])
+
+# Line A: Pantitlán → La Paz
+add_line("A", [
+    ("la_pantitlan", "Pantitlán", 98, 44),
+    ("la_agricola", "Agrícola Oriental", 96, 48),
+    ("la_canal_san_juan", "Canal de San Juan", 94, 52),
+    ("la_tepaclates", "Tepalcates", 92, 56),
+    ("la_guelatao", "Guelatao", 90, 60),
+    ("la_penon_viejo", "Peñón Viejo", 88, 64),
+    ("la_acatitla", "Acatitla", 86, 68),
+    ("la_santa_marta", "Santa Marta", 84, 72),
+    ("la_la_paz", "La Paz", 82, 78),
+])
+
+# Line B: Buenavista → Ciudad Azteca
+add_line("B", [
+    ("lb_buenavista", "Buenavista", 52, 34),
+    ("lb_guerrero", "Guerrero", 58, 28),
+    ("lb_garibaldi", "Garibaldi", 62, 36),
+    ("lb_lagunilla", "Lagunilla", 66, 34),
+    ("lb_tepito", "Tepito", 68, 32),
+    ("lb_morelos", "Morelos", 72, 32),
+    ("lb_san_lazaro", "San Lázaro", 82, 44),
+    ("lb_r_flores_magon", "R. Flores Magón", 86, 38),
+    ("lb_romero_rubio", "Romero Rubio", 88, 34),
+    ("lb_oceania", "Oceanía", 90, 28),
+    ("lb_dep_oceania", "Deportivo Oceanía", 92, 22),
+    ("lb_bosque_aragon", "Bosque de Aragón", 94, 18),
+    ("lb_villa_aragon", "Villa de Aragón", 96, 16),
+    ("lb_nego", "Nezahualcóyotl", 98, 14),
+    ("lb_impulsora", "Impulsora", 98, 12),
+    ("lb_rio_remedios", "Río de los Remedios", 98, 10),
+    ("lb_muzquiz", "Múzquiz", 98, 8),
+    ("lb_ciudad_azteca", "Ciudad Azteca", 98, 6),
+])
+
+# Lookup map
+STATION_BY_ID: Dict[str, Station] = {s.id: s for s in STATIONS}
+
+# Transfers (bidirectional) based on user's schematic
+TRANSFERS: List[Tuple[str, str]] = [
+    # Tacubaya (1-7-9)
+    ("l1_tacubaya", "l7_tacubaya"),
+    ("l1_tacubaya", "l9_tacubaya"),
+    ("l7_tacubaya", "l9_tacubaya"),
+
+    # Pantitlán (1-5-9-A)
+    ("l1_pantitlan", "l5_pantitlan"),
+    ("l1_pantitlan", "l9_pantitlan"),
+    ("l1_pantitlan", "la_pantitlan"),
+    ("l5_pantitlan", "l9_pantitlan"),
+    ("l5_pantitlan", "la_pantitlan"),
+    ("l9_pantitlan", "la_pantitlan"),
+
+    # Hidalgo (2-3)
+    ("l2_hidalgo", "l3_hidalgo"),
+
+    # Bellas Artes (2-8)
+    ("l2_bellas_artes", "l8_bellas_artes"),
+
+    # Pino Suárez (1-2)
+    ("l1_pino_suarez", "l2_san_antonio_abad"),  # close in schematic, primary transfer is at Pino Suárez; approximate
+
+    # Chabacano (2-8-9)
+    ("l2_chabacano", "l8_chabacano"),
+    ("l2_chabacano", "l9_chabacano"),
+    ("l8_chabacano", "l9_chabacano"),
+
+    # Candelaria (1-4)
+    ("l1_candelaria", "l4_candelaria"),
+
+    # Jamaica (4-9)
+    ("l4_jamaica", "l9_jamaica"),
+
+    # Santa Anita (4-8)
+    ("l4_santa_anita", "l8_santa_anita"),
+
+    # Consulado (4-5)
+    ("l4_consulado", "l5_consulado"),
+
+    # Oceanía (5-B)
+    ("l5_oceania", "lb_oceania"),
+
+    # San Lázaro (1-B)
+    ("l1_san_lazaro", "lb_san_lazaro"),
+
+    # Morelos (4-B)
+    ("l4_morelos", "lb_morelos"),
+
+    # Guerrero (3-B)
+    ("l3_guerrero", "lb_guerrero"),
+
+    # Garibaldi (8-B)
+    ("l8_garibaldi", "lb_garibaldi"),
+
+    # Zapata (3-12)
+    ("l3_zapata", "l12_zapata"),
+
+    # Mixcoac (7-12)
+    ("l7_mixcoac", "l12_mixcoac"),
+
+    # Centro Médico (3-9)
+    ("l3_c_medico", "l9_c_medico"),
+
+    # Balderas (1-3)
+    ("l1_balderas", "l3_juarez"),  # schematic closeness; Balderas-Juárez area
 ]
+
 for a, b in TRANSFERS:
-    EDGES.append((a, b, 'transfer'))
-    EDGES.append((b, a, 'transfer'))
+    if a in STATION_BY_ID and b in STATION_BY_ID:
+        EDGES.append((a, b, 'transfer'))
+        EDGES.append((b, a, 'transfer'))
+
 
 # -------------
 # A* algorithm
@@ -124,16 +375,19 @@ for a, b in TRANSFERS:
 def dist(a: Station, b: Station) -> float:
     return math.hypot(a.x - b.x, a.y - b.y)
 
+
 class RouteOptions(BaseModel):
     transfer_penalty: float = Field(5.0, description="Additional cost per transfer")
     mobility: str = Field("normal", description="normal | reduced")
     time_of_day: str = Field("offpeak", description="offpeak | peak")
     prefer_fewer_transfers: bool = False
 
+
 class RouteRequest(BaseModel):
     origin_id: str
     destination_id: str
     options: RouteOptions = RouteOptions()
+
 
 class RouteSegment(BaseModel):
     from_id: str
@@ -142,6 +396,7 @@ class RouteSegment(BaseModel):
     line: Optional[str] = None
     distance: float
     cost: float
+
 
 class RouteResult(BaseModel):
     path: List[str]
@@ -167,16 +422,13 @@ def a_star(origin_id: str, destination_id: str, options: RouteOptions) -> RouteR
         cost = base
         line: Optional[str] = None
         if etype == 'transfer':
-            # transfer cost includes base distance (walking) + penalty
             cost += options.transfer_penalty
         else:
             line = su.line
 
-        # Mobility adjustment: transfers considered harder for reduced mobility
         if options.mobility == 'reduced' and etype == 'transfer':
             cost *= 1.5
 
-        # Peak time adjustment: penalize some crowded segments (e.g., L3 and L9)
         if options.time_of_day == 'peak' and etype == 'line' and (su.line in {"3", "9"}):
             cost *= 1.15
 
@@ -190,7 +442,6 @@ def a_star(origin_id: str, destination_id: str, options: RouteOptions) -> RouteR
     f_score: Dict[str, float] = {sid: math.inf for sid in STATION_BY_ID}
     f_score[origin_id] = dist(start, goal)
 
-    # To also account for transfer count in tie-breaker
     transfers_count: Dict[str, int] = {sid: 0 for sid in STATION_BY_ID}
 
     while open_set:
@@ -201,7 +452,6 @@ def a_star(origin_id: str, destination_id: str, options: RouteOptions) -> RouteR
 
         for v, step_cost, etype, line in neighbors.get(current, []):
             tentative = g_score[current] + step_cost
-            # Encourage fewer transfers if requested by adding small penalty to g
             if options.prefer_fewer_transfers and etype == 'transfer':
                 tentative += 0.5
 
@@ -232,14 +482,12 @@ def a_star(origin_id: str, destination_id: str, options: RouteOptions) -> RouteR
     lines_used: List[str] = []
 
     for a, b in zip(path_ids[:-1], path_ids[1:]):
-        # find edge type
         etype = 'line'
         line = STATION_BY_ID[a].line
         if (a, b, 'transfer') in EDGES:
             etype = 'transfer'
             line = None
         d = dist(STATION_BY_ID[a], STATION_BY_ID[b])
-        # recompute cost using same rules
         cost = d
         if etype == 'transfer':
             cost += options.transfer_penalty
@@ -290,8 +538,7 @@ def compute_route(req: RouteRequest):
 
 @app.get("/test")
 def test_database():
-    """Connectivity + env check (DB is optional for this app)."""
-    response = {
+    return {
         "backend": "✅ Running",
         "database": "ℹ️ Not required for this app",
         "database_url": "Optional",
@@ -299,7 +546,6 @@ def test_database():
         "connection_status": "Not Used",
         "collections": []
     }
-    return response
 
 
 if __name__ == "__main__":
